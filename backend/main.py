@@ -166,6 +166,9 @@ def route(request: RouteRequest):
 
         cat, col = get_category_color(avg_score)
         
+        # Deterministic pseudo-random for estimated minutes
+        minute_seed = int((origin.lat + origin.lng + dest.lat + dest.lng) * 10000) % 15
+        
         routes_response.append({
             "name": rp["name"],
             "waypoints": waypoints,
@@ -173,7 +176,7 @@ def route(request: RouteRequest):
             "category": cat,
             "color_code": col,
             "risk_zone_count": risk_zone_count,
-            "estimated_minutes": int(np.random.randint(15, 30)),
+            "estimated_minutes": 15 + minute_seed + (0 if rp["name"] == "Fastest" else (2 if rp["name"] == "Comfortable" else 5)),
             "explanation": explanation
         })
         
