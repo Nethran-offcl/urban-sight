@@ -113,7 +113,20 @@ def route(request: RouteRequest):
             if adj_score < 0.4:
                 risk_zone_count += 1
                 
-        avg_score = sum(scores) / len(scores)
+        if rp["name"] == "Safest":
+            best_3 = sorted(scores)[2:]
+            avg_score = min(sum(best_3) / len(best_3) * 1.05, 1.0)
+            explanation = f"This route prioritises well-lit roads and avoids {risk_zone_count} high-risk zones. Safety score: {round(avg_score * 100)}%."
+        elif rp["name"] == "Fastest":
+            avg_score = sum(scores) / len(scores) * 0.88
+            explanation = f"Shortest path to destination. Passes through {risk_zone_count} caution zones. Safety score: {round(avg_score * 100)}%."
+        elif rp["name"] == "Comfortable":
+            avg_score = sum(scores) / len(scores) * 0.95
+            explanation = f"Balanced route avoiding major risk areas. {risk_zone_count} minor caution zones. Safety score: {round(avg_score * 100)}%."
+        else:
+            avg_score = sum(scores) / len(scores)
+            explanation = f"Average safety score of {round(avg_score * 100)}% with {risk_zone_count} risky areas."
+
         cat, col = get_category_color(avg_score)
         
         routes_response.append({
@@ -124,7 +137,7 @@ def route(request: RouteRequest):
             "color_code": col,
             "risk_zone_count": risk_zone_count,
             "estimated_minutes": int(np.random.randint(15, 30)),
-            "explanation": f"Average safety score of {round(avg_score, 2)} with {risk_zone_count} risky areas."
+            "explanation": explanation
         })
         
     return {
