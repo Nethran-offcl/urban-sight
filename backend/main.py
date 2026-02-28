@@ -128,16 +128,23 @@ def route(request: RouteRequest):
             f["lat"] = lat
             f["lng"] = lng
             
-            seed1 = math.sin(lat * 1000 + lng * 1000)
-            seed2 = math.cos(lat * 800 - lng * 1200)
-            seed3 = math.sin(lat * 500) * math.cos(lng * 500)
+            # Use high-frequency multipliers so small lat/lng changes create wide variance
+            # Multipliers range ~ -1.0 to 1.0
+            seed1 = math.sin(lat * 50000 + lng * 30000)
+            seed2 = math.cos(lat * 40000 - lng * 60000)
+            seed3 = math.sin(lat * 70000) * math.cos(lng * 70000)
             
-            f["lighting_score"] = float(np.clip(5.0 + 5.0 * seed1, 0.0, 10.0))
-            f["crowd_density"] = float(np.clip(0.5 + 0.5 * seed2, 0.0, 1.0))
-            f["historical_crime_index"] = float(np.clip(0.5 + 0.5 * seed3, 0.0, 1.0))
-            f["police_dist_km"] = float(np.clip(2.5 + 2.5 * seed1 * seed2, 0.0, 5.0))
-            f["is_isolated"] = 1 if seed2 > 0.5 else 0
-            f["near_transit"] = 1 if seed3 > 0.5 else 0
+            # Spread continuous features widely across their logical ranges
+            f["lighting_score"] = float(np.clip(5.0 + 4.8 * seed1, 0.0, 10.0))
+            f["crowd_density"] = float(np.clip(0.5 + 0.45 * seed2, 0.0, 1.0))
+            f["historical_crime_index"] = float(np.clip(0.5 + 0.45 * seed3, 0.0, 1.0))
+            
+            # Police distance should be influenced by both seeds for complexity
+            f["police_dist_km"] = float(np.clip(2.5 + 2.0 * seed1 * seed2, 0.0, 5.0))
+            
+            # Boolean features
+            f["is_isolated"] = 1 if seed2 > 0.3 else 0
+            f["near_transit"] = 1 if seed3 > 0.3 else 0
             
             print(f"    -> Feature dict: {f}")
             
