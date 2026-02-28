@@ -1,5 +1,3 @@
-urban_sight_model.pkl
-scaler.pkl
 urban_safety.csv
 __pycache__/
 *.pyc
