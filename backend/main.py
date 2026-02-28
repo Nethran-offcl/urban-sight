@@ -160,26 +160,29 @@ def route(request: RouteRequest):
         if rp["name"] == "Safest":
             best_3 = sorted(scores)[2:]
             avg_score = min(sum(best_3) / len(best_3) * 1.05, 1.0)
-            explanation = f"This route prioritises well-lit roads and avoids {risk_zone_count} high-risk zones. Safety score: {round(avg_score * 100)}%."
+            explanation = f"This route prioritises well-lit roads and avoids {risk_zone_count} high-risk zones. Safety score: {int(avg_score * 100)}%."
         elif rp["name"] == "Fastest":
             avg_score = sum(scores) / len(scores) * 0.88
-            explanation = f"Shortest path to destination. Passes through {risk_zone_count} caution zones. Safety score: {round(avg_score * 100)}%."
+            explanation = f"Shortest path to destination. Passes through {risk_zone_count} caution zones. Safety score: {int(avg_score * 100)}%."
         elif rp["name"] == "Comfortable":
             avg_score = sum(scores) / len(scores) * 0.95
-            explanation = f"Balanced route avoiding major risk areas. {risk_zone_count} minor caution zones. Safety score: {round(avg_score * 100)}%."
+            explanation = f"Balanced route avoiding major risk areas. {risk_zone_count} minor caution zones. Safety score: {int(avg_score * 100)}%."
         else:
             avg_score = sum(scores) / len(scores)
-            explanation = f"Average safety score of {round(avg_score * 100)}% with {risk_zone_count} risky areas."
+            explanation = f"Average safety score of {int(avg_score * 100)}% with {risk_zone_count} risky areas."
 
         cat, col = get_category_color(avg_score)
         
         # Deterministic pseudo-random for estimated minutes
         minute_seed = int((origin.lat + origin.lng + dest.lat + dest.lng) * 10000) % 15
         
+        # Scale to integer percentage for display on older UI
+        avg_score_pct = int(avg_score * 100)
+        
         routes_response.append({
             "name": rp["name"],
             "waypoints": waypoints,
-            "avg_safety_score": round(avg_score, 4),
+            "avg_safety_score": avg_score_pct,
             "category": cat,
             "color_code": col,
             "risk_zone_count": risk_zone_count,
