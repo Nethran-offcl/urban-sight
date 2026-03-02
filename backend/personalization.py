@@ -41,8 +41,9 @@ def apply_profile_weights(base_score, profile, features):
         score *= 0.85
         adjustments_applied.append("Gender sensitive profile penalty for isolated areas.")
         
-    # Clip final score to [0.0, 1.0]
-    score = max(0.0, min(score, 1.0))
+    import numpy as np
+    # Clip final score to [0.05, 0.98]
+    score = float(np.clip(score, 0.05, 0.98))
     
     return {
         "adjusted_score": round(score, 4),

@@ -38,27 +38,44 @@ def analyze(request: AnalyzeRequest):
     now = datetime.now()
     feature_dict = request.location.dict()
     
-    if feature_dict['hour'] == -1:
-        feature_dict['hour'] = now.hour
+    hour = feature_dict['hour']
+    if hour == -1:
+        hour = now.hour
+        feature_dict['hour'] = hour
     if feature_dict['day_of_week'] == -1:
         feature_dict['day_of_week'] = now.weekday()
         
-    if feature_dict.get('lighting_score') == 5.0:
-        lat = feature_dict.get('lat', 0.0)
-        lng = feature_dict.get('lng', 0.0)
-        loc_features = get_location_features(lat, lng, feature_dict['hour'])
-        for k, v in loc_features.items():
-            feature_dict[k] = v
+    # Use deterministic features based on location
+    loc_features = get_location_features(
+        feature_dict.get('lat', 0.0), 
+        feature_dict.get('lng', 0.0), 
+        hour
+    )
+    for k, v in loc_features.items():
+        feature_dict[k] = v
+        
+    # Override with any explicitly provided values
+    if request.location.lighting_score != 5.0:
+        feature_dict["lighting_score"] = request.location.lighting_score
+    if request.location.crowd_density != 0.5:
+        feature_dict["crowd_density"] = request.location.crowd_density
             
     # Get base score from engine.py predict()
     base_score, _ = predict(feature_dict)
     
     # Apply personalization from personalization.py
     pers = apply_profile_weights(base_score, request.profile, feature_dict)
-    adjusted_score = pers["adjusted_score"]
-    adjustments_applied = pers["adjustments_applied"]
     
-    adjusted_score = float(np.clip(adjusted_score + get_area_adjustment(feature_dict.get('lat', 0.0), feature_dict.get('lng', 0.0)), 0.0, 1.0))
+    area_adj = get_area_adjustment(
+        feature_dict.get('lat', 0.0), 
+        feature_dict.get('lng', 0.0)
+    )
+    
+    adjusted_score = float(np.clip(
+        pers["adjusted_score"] + area_adj, 
+        0.05, 0.98
+    ))
+    adjustments_applied = pers["adjustments_applied"]
     
     category, color_code = get_category_color(adjusted_score)
     
@@ -152,17 +169,19 @@ def route(request: RouteRequest):
             if adj_score < 0.4:
                 risk_zone_count += 1
                 
+        avg_score = sum(scores) / len(scores)
+        
         if rp["name"] == "Safest":
-            avg_score = min(sum(scores) / len(scores) * 1.05, 1.0)
+            avg_score = float(np.clip(avg_score * 1.05, 0.05, 0.98))
             explanation = f"This route prioritises well-lit roads and avoids {risk_zone_count} high-risk zones. Safety score: {int(avg_score * 100)}%."
         elif rp["name"] == "Fastest":
-            avg_score = sum(scores) / len(scores) * 0.88
+            avg_score = float(np.clip(avg_score * 0.88, 0.05, 0.98))
             explanation = f"Shortest path to destination. Passes through {risk_zone_count} caution zones. Safety score: {int(avg_score * 100)}%."
         elif rp["name"] == "Comfortable":
-            avg_score = sum(scores) / len(scores) * 0.95
+            avg_score = float(np.clip(avg_score * 0.95, 0.05, 0.98))
             explanation = f"Balanced route avoiding major risk areas. {risk_zone_count} minor caution zones. Safety score: {int(avg_score * 100)}%."
         else:
-            avg_score = sum(scores) / len(scores)
+            avg_score = float(np.clip(avg_score, 0.05, 0.98))
             explanation = f"Average safety score of {int(avg_score * 100)}% with {risk_zone_count} risky areas."
 
         cat, col = get_category_color(avg_score)
@@ -211,12 +230,15 @@ def heatmap(min_lat: float, max_lat: float, min_lng: float, max_lng: float, hour
                 f[k] = v
             
             score, _ = predict(f)
-            _, col = get_category_color(score)
+            area_adj = get_area_adjustment(f["lat"], f["lng"])
+            final_score = float(np.clip(score + area_adj, 0.05, 0.98))
+            
+            _, col = get_category_color(final_score)
             
             points.append({
                 "lat": float(lat),
                 "lng": float(lng),
-                "safety_score": round(score, 4),
+                "safety_score": round(final_score, 4),
                 "color_code": col
             })
             
