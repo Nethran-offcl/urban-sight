@@ -4,7 +4,7 @@ from datetime import datetime
 import numpy as np
 
 from models import AnalyzeRequest, RouteRequest, LocationFeatures
-from engine import predict, get_shap_explanation, get_recommendations
+from engine import predict, get_shap_explanation, get_recommendations, get_location_features, get_area_adjustment
 from personalization import apply_profile_weights
 
 app = FastAPI(title="Urban Sight API", version="1.0.0")
@@ -43,6 +43,13 @@ def analyze(request: AnalyzeRequest):
     if feature_dict['day_of_week'] == -1:
         feature_dict['day_of_week'] = now.weekday()
         
+    if feature_dict.get('lighting_score') == 5.0:
+        lat = feature_dict.get('lat', 0.0)
+        lng = feature_dict.get('lng', 0.0)
+        loc_features = get_location_features(lat, lng, feature_dict['hour'])
+        for k, v in loc_features.items():
+            feature_dict[k] = v
+            
     # Get base score from engine.py predict()
     base_score, _ = predict(feature_dict)
     
@@ -50,6 +57,8 @@ def analyze(request: AnalyzeRequest):
     pers = apply_profile_weights(base_score, request.profile, feature_dict)
     adjusted_score = pers["adjusted_score"]
     adjustments_applied = pers["adjustments_applied"]
+    
+    adjusted_score = float(np.clip(adjusted_score + get_area_adjustment(feature_dict.get('lat', 0.0), feature_dict.get('lng', 0.0)), 0.0, 1.0))
     
     category, color_code = get_category_color(adjusted_score)
     
@@ -128,23 +137,9 @@ def route(request: RouteRequest):
             f["lat"] = lat
             f["lng"] = lng
             
-            # Use high-frequency multipliers so small lat/lng changes create wide variance
-            # Multipliers range ~ -1.0 to 1.0
-            seed1 = math.sin(lat * 50000 + lng * 30000)
-            seed2 = math.cos(lat * 40000 - lng * 60000)
-            seed3 = math.sin(lat * 70000) * math.cos(lng * 70000)
-            
-            # Spread continuous features widely across their logical ranges
-            f["lighting_score"] = float(np.clip(5.0 + 4.8 * seed1, 0.0, 10.0))
-            f["crowd_density"] = float(np.clip(0.5 + 0.45 * seed2, 0.0, 1.0))
-            f["historical_crime_index"] = float(np.clip(0.5 + 0.45 * seed3, 0.0, 1.0))
-            
-            # Police distance should be influenced by both seeds for complexity
-            f["police_dist_km"] = float(np.clip(2.5 + 2.0 * seed1 * seed2, 0.0, 5.0))
-            
-            # Boolean features
-            f["is_isolated"] = 1 if seed2 > 0.3 else 0
-            f["near_transit"] = 1 if seed3 > 0.3 else 0
+            loc_features = get_location_features(lat, lng, f["hour"])
+            for k, v in loc_features.items():
+                f[k] = v
             
             print(f"    -> Feature dict: {f}")
             
@@ -158,8 +153,7 @@ def route(request: RouteRequest):
                 risk_zone_count += 1
                 
         if rp["name"] == "Safest":
-            best_3 = sorted(scores)[2:]
-            avg_score = min(sum(best_3) / len(best_3) * 1.05, 1.0)
+            avg_score = min(sum(scores) / len(scores) * 1.05, 1.0)
             explanation = f"This route prioritises well-lit roads and avoids {risk_zone_count} high-risk zones. Safety score: {int(avg_score * 100)}%."
         elif rp["name"] == "Fastest":
             avg_score = sum(scores) / len(scores) * 0.88
@@ -212,6 +206,9 @@ def heatmap(min_lat: float, max_lat: float, min_lng: float, max_lng: float, hour
             f = base_loc.copy()
             f["lat"] = float(lat)
             f["lng"] = float(lng)
+            loc_features = get_location_features(f["lat"], f["lng"], f["hour"])
+            for k, v in loc_features.items():
+                f[k] = v
             
             score, _ = predict(f)
             _, col = get_category_color(score)
