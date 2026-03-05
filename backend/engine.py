@@ -80,10 +80,16 @@ def predict(feature_dict):
     expected_cols = ['hour', 'day_of_week', 'lighting_score', 'crowd_density', 
                      'historical_crime_index', 'police_dist_km', 'is_isolated', 'near_transit']
     df_input = pd.DataFrame([feature_dict])[expected_cols]
-    X_scaled = scaler.transform(df_input)
     
-    score = float(model.predict(X_scaled)[0])
-    score = float(np.clip(score, 0.05, 0.98))
+    print(f"DEBUG: Final model input vector (pre-scaling): \n{df_input.iloc[0].to_dict()}")
+    
+    X_scaled = scaler.transform(df_input)
+    print(f"DEBUG: Final model input vector (post-scaling): {X_scaled[0]}")
+    
+    raw_output = float(model.predict(X_scaled)[0])
+    print(f"DEBUG: Raw model output (safety_score): {raw_output}")
+    
+    score = float(np.clip(raw_output, 0.05, 0.98))
     
     if score < 0.4:
         category = "Low"
@@ -104,16 +110,13 @@ def get_location_features(lat, lng, hour):
     
     rng = np.random.RandomState(seed)
     
-    # Distance from Bengaluru city center
-    dist = ((lat - 12.9716)**2 + (lng - 77.5946)**2)**0.5
-    
-    # Derive features deterministically
-    lighting_score = float(np.clip(8.0 - dist * 40, 2.0, 10.0))
-    crowd_density = float(np.clip(0.8 - dist * 3, 0.1, 0.95))
-    historical_crime_index = float(np.clip(dist * 4, 0.05, 0.90))
-    police_dist_km = float(np.clip(0.5 + dist * 20, 0.5, 5.0))
+    # Generate dynamic, pseudo-random but deterministic features for any lat/lng globally
+    lighting_score = float(rng.uniform(2.0, 10.0))
+    crowd_density = float(rng.uniform(0.1, 0.95))
+    historical_crime_index = float(rng.uniform(0.05, 0.90))
+    police_dist_km = float(rng.uniform(0.5, 5.0))
     is_isolated = 1 if (crowd_density < 0.2 and lighting_score < 4) else 0
-    near_transit = 1 if dist < 0.05 else 0
+    near_transit = 1 if rng.uniform(0, 1) > 0.8 else 0
     
     # Night adjustment
     if hour >= 22 or hour <= 4:
@@ -125,9 +128,7 @@ def get_location_features(lat, lng, hour):
       "historical_crime_index": historical_crime_index,
       "police_dist_km": police_dist_km,
       "is_isolated": is_isolated,
-      "near_transit": near_transit,
-      "hour": hour,
-      "day_of_week": 0
+      "near_transit": near_transit
     }
 
 def get_area_adjustment(lat, lng):

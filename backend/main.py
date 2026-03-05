@@ -34,7 +34,8 @@ def health():
     return {"status": "ok", "model": "loaded", "version": "1.0.0"}
 
 @app.post("/analyze")
-def analyze(request: AnalyzeRequest):
+@app.post("/predict-risk")
+def predict_risk(request: AnalyzeRequest):
     now = datetime.now()
     feature_dict = request.location.dict()
     
@@ -44,6 +45,10 @@ def analyze(request: AnalyzeRequest):
         feature_dict['hour'] = hour
     if feature_dict['day_of_week'] == -1:
         feature_dict['day_of_week'] = now.weekday()
+        
+    print("\n" + "="*40)
+    print(f"DEBUG: Incoming latitude: {request.location.lat}, longitude: {request.location.lng}")
+    print(f"DEBUG: time_of_day (hour): {hour}, travel_mode: {request.profile.mode}")
         
     # Use deterministic features based on location
     loc_features = get_location_features(
@@ -59,6 +64,18 @@ def analyze(request: AnalyzeRequest):
         feature_dict["lighting_score"] = request.location.lighting_score
     if request.location.crowd_density != 0.5:
         feature_dict["crowd_density"] = request.location.crowd_density
+            
+    # Modify feature_dict based on travel_mode to ensure model input depends on it
+    mode = request.profile.mode.lower()
+    if mode == "transit":
+        feature_dict["near_transit"] = 1
+    elif mode == "driving":
+        feature_dict["is_isolated"] = 0
+        feature_dict["crowd_density"] = max(0.1, feature_dict["crowd_density"] - 0.2)
+    elif mode == "walking":
+        feature_dict["is_isolated"] = 1 if feature_dict["crowd_density"] < 0.4 else 0
+        
+    print(f"DEBUG: Engineered feature values: {feature_dict}")
             
     # Get base score from engine.py predict()
     base_score, _ = predict(feature_dict)
@@ -160,8 +177,9 @@ def route(request: RouteRequest):
             
             print(f"    -> Feature dict: {f}")
             
-            base_score, _ = predict(f)
-            adj_score = apply_profile_weights(base_score, request.profile, f)["adjusted_score"]
+            base_score, category = predict(f)
+            # handle unpacking adjusted_score as a dict. extract the float numeric score
+            adj_score = float(apply_profile_weights(base_score, request.profile, f)["adjusted_score"])
             scores.append(adj_score)
             
             print(f"    -> Predicted base score: {base_score:.4f}, Adjusted score: {adj_score:.4f}")
@@ -187,7 +205,7 @@ def route(request: RouteRequest):
         cat, col = get_category_color(avg_score)
         
         # Deterministic pseudo-random for estimated minutes
-        minute_seed = int((origin.lat + origin.lng + dest.lat + dest.lng) * 10000) % 15
+        minute_seed = int(abs(origin.lat + origin.lng + dest.lat + dest.lng) * 10000) % 15
         
         # Scale to integer percentage for display on older UI
         avg_score_pct = int(avg_score * 100)
@@ -229,9 +247,9 @@ def heatmap(min_lat: float, max_lat: float, min_lng: float, max_lng: float, hour
             for k, v in loc_features.items():
                 f[k] = v
             
-            score, _ = predict(f)
+            base_score_val_tup = predict(f)
             area_adj = get_area_adjustment(f["lat"], f["lng"])
-            final_score = float(np.clip(score + area_adj, 0.05, 0.98))
+            final_score = float(np.clip(base_score_val_tup[0] + area_adj, 0.05, 0.98))
             
             _, col = get_category_color(final_score)
             
